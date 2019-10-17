@@ -1,0 +1,5 @@
+sensorNameID:
+  baseBoard: 200
+  mpu6050: 200
+  led:     17
+  move:    18
