@@ -15,9 +15,10 @@ from sensor_msgs.msg import Illuminance
 from sensor_msgs.msg import FluidPressure
 from sensor_msgs.msg import Range
 from bodyhub.msg import SensorRawData
+from SensorHubServiceProcess import SensorHubServiceInit
 
 # sensorNameIDFilePath = "/home/dm/catkin_ws/src/bodyhub/config/sensorNameID.yaml"
-sensorNameIDFilePath = os.path.abspath(os.path.join(os.getcwd(),"config/sensorNameID.yaml"))
+sensorNameIDFilePath = os.path.abspath(os.path.join(os.getcwd(),"MyFile/catkin_workspace/src/sensor_hub/config/sensorNameID.yaml"))
 sensorDataDict = dict()
 
 
@@ -132,6 +133,8 @@ class sensor_hub():
         if 55 in sensorDataDict:
             print("55555","FootPressure")
             self.sensor_FootPressure.publish(name="sensor_FootPressure_L_R",values=[78,12])
+        if 102 in sensorDataDict:
+            self.sensor_Illuminance.publish(illuminance=sensorDataDict[102][0],variance=sensorDataDict[102][1])
             
         
         print("11126","sensor_Distance")
@@ -160,6 +163,7 @@ if __name__ == '__main__':
         # 初始化ros节点
         rospy.init_node('SensorHubNode', anonymous=True, log_level=rospy.INFO)# DEBUG INFO ERROR WARN
         print('Starting SensorHubNode node')
+        SensorHubServiceInit()
 
         sensor_nameID_yaml = open(sensorNameIDFilePath)
         sensor_nameID_doc = sensor_nameID_yaml.read()

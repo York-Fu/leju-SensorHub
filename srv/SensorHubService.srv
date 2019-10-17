@@ -1,0 +1,7 @@
+string SensorName
+string Instruct
+float64[] Paramete
+
+---
+
+string Result
