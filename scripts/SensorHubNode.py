@@ -8,173 +8,264 @@ import yaml
 
 import rospy
 from sensor_msgs.msg import Imu
-from sensor_msgs.msg import ChannelFloat32
-from sensor_msgs.msg import RelativeHumidity
-from sensor_msgs.msg import Temperature
-from sensor_msgs.msg import Illuminance
-from sensor_msgs.msg import FluidPressure
+from sensor_msgs.msg import MagneticField
+from sensor_msgs.msg import BatteryState
 from sensor_msgs.msg import Range
+from sensor_msgs.msg import ChannelFloat32
+from sensor_msgs.msg import Illuminance
+from sensor_msgs.msg import Temperature
+from sensor_msgs.msg import RelativeHumidity
+
 from bodyhub.msg import SensorRawData
 
-# sensorNameIDFilePath = "/home/dm/catkin_ws/src/bodyhub/config/sensorNameID.yaml"
-sensorNameIDFilePath = os.path.abspath(os.path.join(os.getcwd(),"config/sensorNameID.yaml"))
-sensorDataDict = dict()
+SensorNameIDFilePath = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config/sensorNameID.yaml"))
+SensorIdNameDict = {}
+SensorList = []
+
+ImuPub = rospy.Publisher('MediumSize/SensorHub/Imu', Imu, queue_size=1)
+MagneticFieldPub = rospy.Publisher('MediumSize/SensorHub/MagneticField', MagneticField, queue_size=1)
+BatteryStatePub = rospy.Publisher('MediumSize/SensorHub/BatteryState', BatteryState, queue_size=1)
+RangePub = rospy.Publisher('MediumSize/SensorHub/Range', Range, queue_size=1)
+ChannelFloat32Pub = rospy.Publisher('MediumSize/SensorHub/sensor_CF1', ChannelFloat32, queue_size=1)
+IlluminancePub = rospy.Publisher('MediumSize/SensorHub/Illuminance', Illuminance, queue_size=1)
+TemperaturePub = rospy.Publisher('MediumSize/SensorHub/Temperature', Temperature, queue_size=1)
+HumidityPub = rospy.Publisher('MediumSize/SensorHub/Humidity', RelativeHumidity, queue_size=1)
 
 
+class Sensor:
+    def __init__(self, name, id, addr, length, data):
+        self.name = name
+        self.id = id
+        self.dataAddr = addr
+        self.dataLength = length
+        self.rawData = data
+
+    def getData(self):
+        return self.rawData
 
 
-class sensor_hub():
-    def __init__(self, IDname_dict):
-
-        self.IDname_dict = IDname_dict
-        self.orientation = [0,0,0,0,0,0,0,0,0]
-        self.angular_velocity = [0,0,0,0,0,0,0,0,0]
-        self.linear_acceleration = [0,0,0,0,0,0,0,0,0]
-
-        rospy.Subscriber("MediumSize/BodyHub/SensorRaw", SensorRawData, self.sensor_raw_callback)
-        self.mpu6050_pub = rospy.Publisher('MediumSize/SensorHub/Imu', Imu, queue_size=1)
-        self.sensor_pub = rospy.Publisher('MediumSize/SensorHub/SensorData', ChannelFloat32, queue_size=1)
-        # fftest
-        self.mmm=0
-        self.sensor_CF1 = rospy.Publisher('MediumSize/SensorHub/sensor_CF1', ChannelFloat32, queue_size=1)
-        self.sensor_Humidity = rospy.Publisher('MediumSize/SensorHub/Humidity', RelativeHumidity, queue_size=1)
-        self.sensor_Temperature = rospy.Publisher('MediumSize/SensorHub/Temperature', Temperature, queue_size=1)
-        self.sensor_Illuminance = rospy.Publisher('MediumSize/SensorHub/Illuminance', Illuminance, queue_size=1)
-        self.sensor_Distance = rospy.Publisher('MediumSize/SensorHub/sensor_Distance', Range, queue_size=1)
-        
+def UintToInt(num, bit):
+    bit -= 1
+    if (num & (1 << bit)):
+        temp = ~(num - 1)
+        return -(temp & ((1 << bit) - 1))
+    return num
 
 
-        self.sensor_FootPressure = rospy.Publisher('MediumSize/SensorHub/FootPressure', ChannelFloat32, queue_size=1)
-        self.sensor_MAG = rospy.Publisher('MediumSize/SensorHub/sensor_MAG', ChannelFloat32, queue_size=1)
-        self.sensor_Fire = rospy.Publisher('MediumSize/SensorHub/sensor_Fire', ChannelFloat32, queue_size=1)
-        self.sensor_PIR = rospy.Publisher('MediumSize/SensorHub/sensor_PIR', ChannelFloat32, queue_size=1)
-        self.sensor_Touch = rospy.Publisher('MediumSize/SensorHub/sensor_Touch', ChannelFloat32, queue_size=1)
-        # fftest end
+# 板载imu
+def ImuDataProcess(rawData):
+
+    grayCoefficient = 2000.0 / 32768
+    accCoefficient = 16.0 / 32768
+    imuData = Imu()
+
+    imuData.angular_velocity.x = UintToInt((rawData[1] << 8) + rawData[0], 16)
+    imuData.angular_velocity.y = UintToInt((rawData[3] << 8) + rawData[2], 16)
+    imuData.angular_velocity.z = UintToInt((rawData[5] << 8) + rawData[4], 16)
+
+    imuData.angular_velocity.x *= grayCoefficient
+    imuData.angular_velocity.y *= grayCoefficient
+    imuData.angular_velocity.z *= grayCoefficient
+
+    imuData.linear_acceleration.x = UintToInt((rawData[7] << 8) + rawData[6], 16)
+    imuData.linear_acceleration.y = UintToInt((rawData[9] << 8) + rawData[8], 16)
+    imuData.linear_acceleration.z = UintToInt((rawData[11] << 8) + rawData[10], 16)
+
+    imuData.linear_acceleration.x *= accCoefficient
+    imuData.linear_acceleration.y *= accCoefficient
+    imuData.linear_acceleration.z *= accCoefficient
+
+    ImuPub.publish(imuData)
 
 
-    def hexTo16int(self, j):
-        d = 0x8000
-        i = j
-        if (j&d == 0):
-            ii = i
-            iii = ii
-            return iii *1
+# 板载磁场
+def MagneticDataProcess(rawData):
+
+    magCoefficient = 50.0 / 32768
+    magData = MagneticField()
+
+    magData.magnetic_field.x = UintToInt((rawData[1] << 8) + rawData[0], 16)
+    magData.magnetic_field.y = UintToInt((rawData[3] << 8) + rawData[2], 16)
+    magData.magnetic_field.z = UintToInt((rawData[5] << 8) + rawData[4], 16)
+
+    magData.magnetic_field.x *= magCoefficient
+    magData.magnetic_field.y *= magCoefficient
+    magData.magnetic_field.z *= magCoefficient
+
+    MagneticFieldPub.publish(magData)
+
+
+# 板载adc
+def AdcDataProcess(rawData):
+    battData = BatteryState()
+    battData.voltage = rawData[0] / 10.0
+    battData.present = True
+    BatteryStatePub.publish(battData)
+
+
+# 板载按键
+def KeyDataProcess(rawData):
+    status = 0
+    for i in range(5):
+        if rawData[i]:
+            status |= (1 << i)
+    if status > 0:
+        ChannelFloat32Pub.publish(name="KeyStatus", values=[status])
+
+
+# 板载led
+def LedDataProcess(rawData):
+    ChannelFloat32Pub.publish(name="LedStatus", values=[(rawData[0] << 8) + rawData[1]])
+
+
+# 板载测距
+def RangeDataProcess(rawData):
+    RangePub.publish(range=(rawData[1] << 8) + rawData[0])
+
+
+# 板载传感器
+def BaseBoardDataProcess(rawData):
+    ledStatus = []
+    keyStatus = []
+    imuData = []
+    MagneticData = []
+    adcData = []
+    rangeData = []
+    startAddr = 24
+
+    offset, lenght = 26, 2
+    for i in range(offset, offset + lenght):
+        ledStatus.append(rawData[i - startAddr])
+    LedDataProcess(ledStatus)
+
+    offset, lenght = 30, 5
+    for i in range(offset, offset + lenght):
+        keyStatus.append(rawData[i - startAddr])
+    KeyDataProcess(keyStatus)
+
+    offset, lenght = 38, 12
+    for i in range(offset, offset + lenght):
+        imuData.append(rawData[i - startAddr])
+    ImuDataProcess(imuData)
+
+    offset, lenght = 50, 1
+    for i in range(offset, offset + lenght):
+        adcData.append(rawData[i - startAddr])
+    AdcDataProcess(adcData)
+
+    offset, lenght = 51, 6
+    for i in range(offset, offset + lenght):
+        MagneticData.append(rawData[i - startAddr])
+    MagneticDataProcess(MagneticData)
+
+    offset, lenght = 59, 2
+    for i in range(offset, offset + lenght):
+        rangeData.append(rawData[i - startAddr])
+    RangeDataProcess(rangeData)
+
+
+# 光照度传感器
+def IlluminanceDataProcess(rawData):
+    IlluminancePub.publish(illuminance=rawData[0], variance=0)
+
+
+# 温湿度传感器
+def HumitureDataProcess(rawData):
+    temperature = rawData[0] + rawData[1]
+    humidity = rawData[2] + rawData[3]
+    TemperaturePub.publish(temperature=temperature, variance=0)
+    HumidityPub.publish(relative_humidity=humidity, variance=0)
+
+
+# 人体红外传感器
+def InfraredDataProcess(rawData):
+    ChannelFloat32Pub.publish(name="InfraredStatus", values=[rawData[0]])
+
+
+# 颜色传感器
+def ColorDataProcess(rawData):
+    ChannelFloat32Pub.publish(name="ColorValue", values=[rawData[0]])
+
+
+# 火焰传感器
+def FireDataProcess(rawData):
+    ChannelFloat32Pub.publish(name="FireStatus", values=[rawData[0]])
+
+
+# 气体传感器
+def GasDataProcess(rawData):
+    ChannelFloat32Pub.publish(name="GasStatus", values=[rawData[0]])
+
+
+# 触摸传感器
+def TouchDataProcess(rawData):
+    ChannelFloat32Pub.publish(name="TouchStatus", values=[rawData[0]])
+
+
+def SensorRawDataProcess():
+    while (len(SensorList) > 0):
+        sensor = SensorList.pop(0)
+        if SensorIdNameDict[sensor.id] == 'baseBoard':
+            BaseBoardDataProcess(sensor.getData())
+        elif SensorIdNameDict[sensor.id] == 'illuminance':
+            IlluminanceDataProcess(sensor.getData())
+        elif SensorIdNameDict[sensor.id] == 'humiture':
+            HumitureDataProcess(sensor.getData())
+        elif SensorIdNameDict[sensor.id] == 'infrared':
+            InfraredDataProcess(sensor.getData())
+        elif SensorIdNameDict[sensor.id] == 'color':
+            ColorDataProcess(sensor.getData())
+        elif SensorIdNameDict[sensor.id] == 'fire':
+            FireDataProcess(sensor.getData())
+        elif SensorIdNameDict[sensor.id] == 'gas':
+            GasDataProcess(sensor.getData())
+        elif SensorIdNameDict[sensor.id] == 'touch':
+            TouchDataProcess(sensor.getData())
         else:
-            ii = i
-            iii = ~(ii-1)
-            iiii = iii & 0x7fff
-            return iiii * -1
-
-    
+            pass
 
 
-
-    def sensor_raw_callback(self,rawdata):
-
-        sensor_count = 0
-        sensor_id = ()
-        sensor_address = ()
-        sensor_length = ()
-        sensor_data = ()
-
-        sensor_id = rawdata.sensorReadID
-        sensor_count = rawdata.sensorCount
-        sensor_address = rawdata.sensorStartAddress
-        sensor_length = rawdata.sensorReadLength
-        sensor_data = rawdata.sensorData
-        sensor_data_length = rawdata.dataLength
-
-        data_index = 0
-        sensorDataDict = {}
-        for idNum in range(sensor_count):
-            sensorDataDict[ord(sensor_id[idNum])] = sensor_data[data_index:(data_index+sensor_length[idNum])]
-            data_index = sensor_length[idNum]
-
-        # fftest
-        self.mmm += 1
-        sensor_id_list = list(sensor_id)
-        for i in range(9):
-            sensorDataDict[i+i*10] = [i,i,i,i,i]
-            sensor_count = sensor_count+1
-            sensor_id_list.append(chr(i+i*10))
-        # fftest end
-
-        # 打印data字典
-        rospy.loginfo("sensorDataDict:")
-        for idNum in range(sensor_count):
-            print(ord(sensor_id_list[idNum]))
-            rospy.loginfo(sensorDataDict[ord(sensor_id_list[idNum])])
-
-            
-        #IMU publish
-        if 200 in sensorDataDict:
-            self.angular_velocity[0] = self.hexTo16int(sensorDataDict[200][0] + sensorDataDict[200][1] * 256)    #Gyro_x
-            self.angular_velocity[1] = self.hexTo16int(sensorDataDict[200][2] + sensorDataDict[200][3] * 256)    #Gyro_y
-            self.angular_velocity[2] = self.hexTo16int(sensorDataDict[200][4] + sensorDataDict[200][5] * 256)    #Gyro_z
-            self.linear_acceleration[0] = self.hexTo16int(sensorDataDict[200][6] + sensorDataDict[200][7] * 256)      #ACC_x
-            self.linear_acceleration[1] = self.hexTo16int(sensorDataDict[200][8] + sensorDataDict[200][9] * 256)      #ACC_y
-            self.linear_acceleration[2] = self.hexTo16int(sensorDataDict[200][10] + sensorDataDict[200][11] * 256)    #ACC_z
-            self.mpu6050_pub.publish(orientation_covariance=self.orientation,angular_velocity_covariance=self.angular_velocity,linear_acceleration_covariance=self.linear_acceleration)
-        
-        #fftest publish
-        if 11 in sensorDataDict:
-            print("11111","ChannelFloat32")
-            self.sensor_CF1.publish(name="channel111",values=[self.mmm,12,13])
-        if 22 in sensorDataDict:
-            print("22222","RelativeHumidity")
-            self.sensor_Humidity.publish(relative_humidity=86,variance=566)
-        if 33 in sensorDataDict:
-            print("33333","Temperature")
-            self.sensor_Temperature.publish(temperature=27,variance=702)
-        if 44 in sensorDataDict:
-            print("44444","Illuminance")
-            self.sensor_Illuminance.publish(illuminance=52,variance=258)
-        if 55 in sensorDataDict:
-            print("55555","FootPressure")
-            self.sensor_FootPressure.publish(name="sensor_FootPressure_L_R",values=[78,12])
-            
-        
-        print("11126","sensor_Distance")
-        self.sensor_Distance.publish(min_range=2,max_range=0.3,range=1.11)
-        print("11127","sensor_Fire")
-        self.sensor_Fire.publish(name="sensor_Fire",values=[77,12,13])
-        print("11128","sensor_PIR")
-        self.sensor_PIR.publish(name="sensor_PIR",values=[78,12,13])
-        print("11129","sensor_Touch")
-        self.sensor_Touch.publish(name="sensor_Touch",values=[79,12,13])
-        #fftest publish end
-        
-        for i_d in sensor_id:
-            sensorNum = ord(i_d)
-            if self.IDname_dict.get(sensorNum):
-                id_name = self.IDname_dict[sensorNum]
-                self.sensor_pub.publish(name=id_name,values=sensorDataDict[sensorNum])
+# ----------------------------------------------------------------------------------------
 
 
+def LoadYamlFile(filePath):
+    yamlFile = open(filePath)
+    sensorNameIdDoc = yaml.load(yamlFile)
+
+    for name in sensorNameIdDoc["sensorNameID"]:
+        SensorIdNameDict[sensorNameIdDoc["sensorNameID"][name]] = name
+    rospy.loginfo(SensorIdNameDict)
+
+
+def SensorRawDataCallback(rawData):
+    # rospy.loginfo(rawData.sensorData)
+    sensorCount = rawData.sensorCount
+    # dataOverallLength = rawData.dataLength
+
+    dataIndex = 0
+    sensorIdList = list(rawData.sensorReadID)
+    for i in range(sensorCount):
+        sensorIdList[i] = ord(sensorIdList[i])
+        if sensorIdList[i] in SensorIdNameDict:
+            SensorList.append(
+                Sensor(SensorIdNameDict[sensorIdList[i]], sensorIdList[i], rawData.sensorStartAddress[i], rawData.sensorReadLength[i],
+                       rawData.sensorData[dataIndex:(dataIndex + rawData.sensorReadLength[i])]))
+        else:
+            rospy.loginfo('Undefined id')
+        dataIndex += rawData.sensorReadLength[i]
+
+    SensorRawDataProcess()
 
 
 if __name__ == '__main__':
-
     try:
-        
         # 初始化ros节点
-        rospy.init_node('SensorHubNode', anonymous=True, log_level=rospy.INFO)# DEBUG INFO ERROR WARN
+        rospy.init_node('SensorHubNode', anonymous=True, log_level=rospy.INFO)  # DEBUG INFO ERROR WARN
         print('Starting SensorHubNode node')
 
-        sensor_nameID_yaml = open(sensorNameIDFilePath)
-        sensor_nameID_doc = sensor_nameID_yaml.read()
-        sensor_nameID_dict = yaml.load(sensor_nameID_doc)
-        rospy.loginfo(sensor_nameID_dict)
+        LoadYamlFile(SensorNameIDFilePath)
 
-        # sensor_IDname_dict
-        sensor_IDname_dict = {}
-        for sensor_name in sensor_nameID_dict["sensorNameID"]:
-            sensor_IDname_dict[sensor_nameID_dict["sensorNameID"][sensor_name]] = sensor_name
-        rospy.loginfo(sensor_IDname_dict)
-
-        sensor_hub(sensor_IDname_dict)
-
+        rospy.Subscriber("MediumSize/BodyHub/SensorRaw", SensorRawData, SensorRawDataCallback)
         rospy.spin()
-
     except KeyboardInterrupt:
-        rospy.logwarn ("Shutting down SensorHub node.")
+        rospy.logwarn("Shutting down SensorHub node.")
